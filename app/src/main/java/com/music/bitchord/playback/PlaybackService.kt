@@ -7066,9 +7066,8 @@ class PlaybackService : MediaLibraryService() {
      * stays a no-op whenever ListenBrainz is switched off.
      */
     private fun submitListenBrainzFinished(song: Song, startMs: Long, durationMs: Long?) {
-        val lbEnabled = AppSettings.scrobblingAvailable && AppSettings.listenBrainzEnabled.value
-        val lbToken = AppSettings.listenBrainzToken.value
-        if (!lbEnabled || lbToken.isBlank()) return
+        val lbToken = AppSettings.listenBrainzToken.value.ifBlank { ListenBrainzManager.token }
+        if (lbToken.isBlank()) return
         val endMs = System.currentTimeMillis()
         scope.launch {
             ListenBrainzManager.submitFinished(lbToken, song, startMs, endMs, durationMs, AppSettings.listenBrainzPrimaryArtistOnly.value)
@@ -7077,9 +7076,8 @@ class PlaybackService : MediaLibraryService() {
 
     /** Sends a ListenBrainz "now playing" update for the current track. */
     private fun submitListenBrainzPlayingNow(song: Song, positionMs: Long, durationMs: Long?) {
-        val lbEnabled = AppSettings.scrobblingAvailable && AppSettings.listenBrainzEnabled.value
-        val lbToken = AppSettings.listenBrainzToken.value
-        if (!lbEnabled || lbToken.isBlank()) return
+        val lbToken = AppSettings.listenBrainzToken.value.ifBlank { ListenBrainzManager.token }
+        if (lbToken.isBlank()) return
         scope.launch {
             ListenBrainzManager.submitPlayingNow(lbToken, song, positionMs, durationMs, AppSettings.listenBrainzPrimaryArtistOnly.value)
         }

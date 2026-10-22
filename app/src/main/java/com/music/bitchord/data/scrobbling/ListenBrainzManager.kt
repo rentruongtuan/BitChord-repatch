@@ -1,4 +1,4 @@
-﻿package com.music.bitchord.data.scrobbling
+package com.music.bitchord.data.scrobbling
 
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.model.Song
@@ -51,6 +51,7 @@ object ListenBrainzManager {
                         .post(body)
                         .addHeader("Content-Type", "application/json")
                         .addHeader("Authorization", "Token $effectiveToken")
+                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) BitChord/1.8.1")
                         .build()
 
                 Http.client.newCall(request).execute().use { resp ->
@@ -117,6 +118,7 @@ object ListenBrainzManager {
                         .post(body)
                         .addHeader("Content-Type", "application/json")
                         .addHeader("Authorization", "Token $effectiveToken")
+                        .addHeader("User-Agent", "Mozilla/5.0 (Linux; Android 14) BitChord/1.8.1")
                         .build()
 
                 Http.client.newCall(request).execute().use { resp ->
