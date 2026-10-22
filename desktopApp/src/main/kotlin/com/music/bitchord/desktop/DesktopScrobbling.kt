@@ -309,6 +309,7 @@ object DesktopScrobbling {
         try {
             val response = client.post(endpoint) {
                 header("Authorization", "Token $token")
+                header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BitChord/1.8.1")
                 contentType(ContentType.Application.Json)
                 setBody(
                     buildJsonObject {

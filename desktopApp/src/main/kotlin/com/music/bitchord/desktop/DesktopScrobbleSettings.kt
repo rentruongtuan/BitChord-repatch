@@ -33,8 +33,8 @@ internal object DesktopScrobbleSettings {
     private val _lastfmApiSecret = text(KEY_LASTFM_API_SECRET)
 
     private val _listenBrainzEnabled = flag(KEY_LISTENBRAINZ_ENABLED, false)
-    private val _listenBrainzToken = text(KEY_LISTENBRAINZ_TOKEN)
-    private val _listenBrainzEndpoint = MutableStateFlow(persistence.string(KEY_LISTENBRAINZ_ENDPOINT, DEFAULT_LISTENBRAINZ_ENDPOINT))
+    private val _listenBrainzToken = MutableStateFlow(persistence.string(KEY_LISTENBRAINZ_TOKEN, DEFAULT_LISTENBRAINZ_TOKEN).ifBlank { DEFAULT_LISTENBRAINZ_TOKEN })
+    private val _listenBrainzEndpoint = MutableStateFlow(persistence.string(KEY_LISTENBRAINZ_ENDPOINT, DEFAULT_LISTENBRAINZ_ENDPOINT).ifBlank { DEFAULT_LISTENBRAINZ_ENDPOINT })
     private val _listenBrainzPrimaryArtistOnly = flag(KEY_LISTENBRAINZ_PRIMARY_ARTIST, false)
 
     private val _minDuration = MutableStateFlow(persistence.int(KEY_MIN_DURATION, DEFAULT_MIN_DURATION))
@@ -146,6 +146,7 @@ internal object DesktopScrobbleSettings {
     private const val KEY_DELAY_SECONDS = "scrobble_delay_seconds"
 
     const val DEFAULT_LISTENBRAINZ_ENDPOINT = "https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens"
+    const val DEFAULT_LISTENBRAINZ_TOKEN = "mcfP9mwncsQaWghEmcvgPtGjdShcra0N"
     const val DEFAULT_MIN_DURATION = 30
     const val DEFAULT_DELAY_PERCENT = 0.5f
     const val DEFAULT_DELAY_SECONDS = 180
