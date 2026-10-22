@@ -73,3 +73,24 @@
     - `release-desktop/BitChord-windows-portable.zip`: Bản portable script chạy nhanh.
     - `dist/BitChord-1.8.1-linux-x86_64.AppImage`: Bản AppImage chạy trên CachyOS / Linux.
 
+## 2026-10-22 — Đóng gói Windows Setup (.msi), Dọn dẹp Portable và Thiết lập Kênh Cập nhật Online (OTA)
+
+- **Đóng gói Windows Installer (.msi):**
+  - Chạy tác vụ `:desktopApp:packageMsi` (kết hợp WiX Toolset) đóng gói thành công file cài đặt chuẩn Windows: `release-desktop/BitChord-1.8.1-windows-setup.msi` (319 MB).
+  - Bản cài đặt này tự động tạo shortcut trên Desktop, Menu Start và quản lý trong Settings/Installed Apps.
+  - Dọn dẹp tệp portable script dư thừa, chỉ giữ lại file cài đặt `.msi` và bản standalone `.zip`.
+
+- **Làm rõ thẩm mỹ giao diện Mac-style:**
+  - Tác giả gốc BitChord thiết kế thanh tiêu đề theo phong cách Apple Music trên macOS (`MacCaptionButton`).
+  - Hướng dẫn chuyển về thanh tiêu đề chuẩn Windows: Vào **Settings** -> Bật **Title Bar** (System Window Frame).
+
+- **Thiết lập Kênh Cập nhật Online (In-App OTA Update) trực tiếp trên thiết bị:**
+  - Tạo repository chính thức trên tài khoản GitHub của REN: `https://github.com/rentruongtuan/BitChord-repatch`.
+  - Cập nhật endpoint kiểm tra phiên bản mới trong mã nguồn:
+    - Android: `app/src/main/java/com/music/bitchord/data/AppUpdateChecker.kt` trỏ `LATEST_RELEASE_URL` về `repos/rentruongtuan/BitChord-repatch/releases/latest`.
+    - Desktop: `desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopUpdateChecker.kt` trỏ `LATEST_RELEASE_URL` về `repos/rentruongtuan/BitChord-repatch/releases/latest`.
+  - Nâng cấp thuật toán `apkAssetUrl` trên Android: Tự động phân tích ABI của thiết bị người dùng (ưu tiên tải bản nhẹ `arm64-v8a` 96MB cho các điện thoại đời mới thay vì phải tải bản universal 199MB).
+  - Nâng cấp thuật toán `installerUrl` trên Desktop: Tự động nhận diện và tải đúng tệp `.msi` (Windows) hoặc `.AppImage` (CachyOS/Linux).
+  - Nâng `bitchordVersionCode = 31` và ký cố định bằng `signing/bitchord-debug.keystore` để đảm bảo cài đè trực tiếp (In-place update) không mất dữ liệu.
+  - Sau này mỗi khi có bản mod mới: Chỉ cần push release lên GitHub của REN, các thiết bị (Android, Windows, CachyOS) khi mở app sẽ tự động nhận diện bản mới và cập nhật trực tiếp qua Internet chỉ với 1 chạm.
+
