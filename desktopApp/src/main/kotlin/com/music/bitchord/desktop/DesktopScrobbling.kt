@@ -18,6 +18,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
@@ -41,7 +42,8 @@ import kotlin.math.min
  */
 object DesktopScrobbling {
     private const val LAST_FM_ENDPOINT = "https://ws.audioscrobbler.com/2.0/"
-    private const val LISTENBRAINZ_ENDPOINT = "https://api.listenbrainz.org/1/submit-listens"
+    private const val DEFAULT_FLOPPY_ENDPOINT = "https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens"
+    private const val DEFAULT_FLOPPY_TOKEN = "mcfP9mwncsQaWghEmcvgPtGjdShcra0N"
 
     private val client = HttpClient(CIO) {
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
@@ -72,7 +74,7 @@ object DesktopScrobbling {
             DesktopScrobbleSettings.lastfmEnabled.value
 
     val listenBrainzConfigured: Boolean
-        get() = listenBrainzToken() != null && DesktopScrobbleSettings.listenBrainzEnabled.value
+        get() = DesktopScrobbleSettings.listenBrainzEnabled.value || listenBrainzToken().isNotBlank()
 
     // A key the listener entered in Settings wins; a build that baked one in
     // (or ran with one in the environment) is the fallback, exactly as on
@@ -89,9 +91,15 @@ object DesktopScrobbling {
         DesktopScrobbleSettings.lastfmSessionKey.value.takeIf(String::isNotBlank)
             ?: env("BITCHORD_LASTFM_SESSION_KEY")
 
-    private fun listenBrainzToken(): String? =
+    private fun listenBrainzEndpoint(): String =
+        property("bitchord.listenbrainz.endpoint")
+            ?: env("BITCHORD_LISTENBRAINZ_ENDPOINT")
+            ?: DEFAULT_FLOPPY_ENDPOINT
+
+    private fun listenBrainzToken(): String =
         DesktopScrobbleSettings.listenBrainzToken.value.takeIf(String::isNotBlank)
             ?: env("BITCHORD_LISTENBRAINZ_TOKEN")
+            ?: DEFAULT_FLOPPY_TOKEN
 
     /**
      * Signs in with a username and password, the way Android's login alert
@@ -264,40 +272,72 @@ object DesktopScrobbling {
         durationMs: Long,
         timestamp: Long,
     ) {
+        val token = listenBrainzToken()
+        if (token.isBlank()) return
         val isPlayingNow = listenType == "playing_now"
-        val response = client.post(LISTENBRAINZ_ENDPOINT) {
-            header("Authorization", "Token ${listenBrainzToken()!!}")
-            contentType(ContentType.Application.Json)
-            setBody(
-                buildJsonObject {
-                    put("listen_type", listenType)
-                    putJsonArray("payload") {
-                        add(
-                            buildJsonObject {
-                                if (!isPlayingNow) put("listened_at", timestamp)
-                                putJsonObject("track_metadata") {
-                                    put("artist_name", song.artist.forListenBrainz())
-                                    put("track_name", song.title)
-                                    song.albumName?.let { put("release_name", it) }
-                                    putJsonObject("additional_info") {
-                                        put("submission_client", "BitChord")
-                                        if (isPlayingNow) {
-                                            put("position_ms", 0L)
-                                            if (durationMs > 0) put("duration_ms", durationMs)
-                                        } else {
-                                            put("start_ms", startMs)
-                                            put("end_ms", durationMs)
-                                            if (durationMs > 0) put("duration_ms", durationMs)
+        val endpoint = listenBrainzEndpoint()
+
+        var listenedAt = timestamp
+        val minListenTs = 1033430400L // 2002-10-01
+        if (listenedAt < minListenTs) {
+            listenedAt = System.currentTimeMillis() / 1_000L
+        }
+
+        val coverUrl = song.thumbnailUrl?.takeIf {
+            it.isNotBlank() && (it.startsWith("http://") || it.startsWith("https://"))
+        }
+
+        try {
+            val response = client.post(endpoint) {
+                header("Authorization", "Token $token")
+                contentType(ContentType.Application.Json)
+                setBody(
+                    buildJsonObject {
+                        put("listen_type", listenType)
+                        putJsonArray("payload") {
+                            add(
+                                buildJsonObject {
+                                    if (!isPlayingNow) put("listened_at", listenedAt)
+                                    putJsonObject("track_metadata") {
+                                        put("artist_name", song.artist.forListenBrainz())
+                                        put("track_name", song.title)
+                                        song.albumName?.let { put("release_name", it) }
+                                        putJsonObject("additional_info") {
+                                            put("submission_client", "BitChord Desktop")
+                                            if (coverUrl != null) {
+                                                put("cover_url", coverUrl)
+                                            }
+                                            if (song.artists.isNotEmpty()) {
+                                                putJsonArray("artists") {
+                                                    song.artists.forEach { add(JsonPrimitive(it.name)) }
+                                                }
+                                            }
+                                            if (isPlayingNow) {
+                                                put("position_ms", 0L)
+                                                if (durationMs > 0) put("duration_ms", durationMs)
+                                            } else {
+                                                put("start_ms", startMs)
+                                                put("end_ms", durationMs)
+                                                if (durationMs > 0) put("duration_ms", durationMs)
+                                            }
                                         }
                                     }
-                                }
-                            },
-                        )
-                    }
-                },
-            )
+                                },
+                            )
+                        }
+                    },
+                )
+            }
+            val status = response.status.value
+            if (status in 200..299) {
+                println("[DesktopScrobbling] Floppy $listenType submitted successfully for '${song.title}'")
+            } else {
+                val err = runCatching { response.bodyAsText() }.getOrDefault("")
+                System.err.println("[DesktopScrobbling] Floppy $listenType failed HTTP $status: $err")
+            }
+        } catch (ex: Exception) {
+            System.err.println("[DesktopScrobbling] Floppy $listenType request error: ${ex.message}")
         }
-        check(response.status.value in 200..299) { "ListenBrainz returned HTTP ${response.status.value}" }
     }
 
     private fun sign(values: Map<String, String>): String {

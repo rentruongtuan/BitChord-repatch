@@ -43,7 +43,7 @@ object AppUpdateChecker {
     private const val CACHE_SUBDIR = "updates"
 
     private const val LATEST_RELEASE_URL =
-        "https://api.github.com/repos/kushagrasinghx/BitChord/releases/latest"
+        "https://api.github.com/repos/rentruongtuan/BitChord-repatch/releases/latest"
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -94,19 +94,9 @@ object AppUpdateChecker {
     }
 
     /**
-     * One release carries the phone app and the TV app, each as a universal
-     * APK plus per-ABI splits:
-     *
-     *     BitChord-v1.8.apk     BitChord-v1.8_arm64-v8a.apk     ...
-     *     BitChordTV-v1.8.apk   BitChordTV-v1.8_arm64-v8a.apk   ...
-     *
-     * so this app's APKs are the ones named with its own
-     * [BuildConfig.UPDATE_APK_PREFIX] — "BitChord-" never matches a TV file,
-     * since the prefix ends at the hyphen. The universal build (no `_ABI`
-     * suffix) is taken first, as it installs anywhere; failing that, the split
-     * for this device's ABI. A release with neither leaves
-     * [UpdateInfo.apkUrl] null and the UI falls back to opening the releases
-     * page.
+     * Finds the best matching APK from the release assets:
+     * 1. Prioritizes the device's native ABI (e.g. arm64-v8a) to save bandwidth and storage.
+     * 2. Falls back to the universal APK if no architecture-specific split is present.
      */
     private fun apkAssetUrl(release: JsonObject): String? = runCatching {
         val apks = release["assets"]?.jsonArray
@@ -114,16 +104,27 @@ object AppUpdateChecker {
             ?.mapNotNull { asset ->
                 val name = asset["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
                 val url = asset["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null
-                val ours = name.startsWith(BuildConfig.UPDATE_APK_PREFIX, ignoreCase = true) &&
-                    name.endsWith(".apk", ignoreCase = true) &&
-                    asset["state"]?.jsonPrimitive?.contentOrNull == "uploaded"
-                if (ours) name.removeSuffix(".apk").removeSuffix(".APK") to url else null
+                val state = asset["state"]?.jsonPrimitive?.contentOrNull
+                val isApk = name.endsWith(".apk", ignoreCase = true)
+                val matchesPrefix = name.startsWith(BuildConfig.UPDATE_APK_PREFIX, ignoreCase = true)
+                if (isApk && matchesPrefix && (state == null || state == "uploaded")) {
+                    name.lowercase() to url
+                } else null
             }
             .orEmpty()
-        apks.firstOrNull { (name, _) -> '_' !in name }?.second
-            ?: Build.SUPPORTED_ABIS.firstNotNullOfOrNull { abi ->
-                apks.firstOrNull { (name, _) -> name.endsWith("_$abi") }?.second
-            }
+
+        if (apks.isEmpty()) return@runCatching null
+
+        val supportedAbis = Build.SUPPORTED_ABIS.map { it.lowercase() }
+        for (abi in supportedAbis) {
+            val abiMatch = apks.firstOrNull { (name, _) -> name.contains(abi) }
+            if (abiMatch != null) return@runCatching abiMatch.second
+        }
+
+        val universalMatch = apks.firstOrNull { (name, _) -> name.contains("universal") }
+        if (universalMatch != null) return@runCatching universalMatch.second
+
+        apks.firstOrNull()?.second
     }.getOrNull()
 
     /**

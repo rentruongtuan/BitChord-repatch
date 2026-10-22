@@ -48,3 +48,9 @@ AGENTS.md
 # Built packages — release APKs/bundles are handed out, never committed
 *.apk
 *.aab
+*.msi
+*.zip
+*.AppImage
+/release-apk/
+/release-desktop/
+/dist/

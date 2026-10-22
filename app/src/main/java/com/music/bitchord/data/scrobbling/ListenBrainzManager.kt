@@ -1,4 +1,4 @@
-package com.music.bitchord.data.scrobbling
+﻿package com.music.bitchord.data.scrobbling
 
 import com.music.bitchord.data.DebugLog as Log
 import com.music.bitchord.data.model.Song
@@ -11,35 +11,46 @@ import com.music.bitchord.data.Http
 
 object ListenBrainzManager {
     private const val TAG = "ListenBrainzManager"
-    private const val API_URL = "https://api.listenbrainz.org/1/submit-listens"
+    
+    // Mặc định trỏ về server Floppy của bạn
+    var apiUrl: String = "https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens"
+    var token: String = "mcfP9mwncsQaWghEmcvgPtGjdShcra0N"
+    var isEnabled: Boolean = true
 
     suspend fun submitPlayingNow(
-        token: String,
+        userToken: String? = null,
         song: Song?,
         positionMs: Long,
         durationMsOverride: Long? = null,
         primaryArtistOnly: Boolean = false,
     ): Boolean {
-        if (token.isBlank() || song == null) return false
+        val effectiveToken = userToken?.takeIf { it.isNotBlank() } ?: token
+        if (!isEnabled || effectiveToken.isBlank() || song == null) return false
         return withContext(Dispatchers.IO) {
             try {
                 val durationMs = durationMsOverride ?: parseDurationMs(song.durationText)
-                // The API rejects a zero/negative duration_ms, and it is
-                // optional — so only send it when it is actually known.
                 val durationPart = if (durationMs > 0) "\"duration_ms\":$durationMs," else ""
                 val releaseName = song.albumName.orEmpty()
                 val releasePart = if (releaseName.isBlank()) "" else "\"release_name\":\"${escapeJson(releaseName)}\","
                 val artist = if (primaryArtistOnly) song.artist.primaryArtist() else song.artist
-                val trackMetadata = """{"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${durationPart}"position_ms":$positionMs,"submission_client":"BitChord"}}}"""
+                
+                // Đẩy cover_url và artists vào additional_info
+                val coverPart = song.thumbnailUrl?.takeIf { it.isNotBlank() && (it.startsWith("http://") || it.startsWith("https://")) }?.let { "\"cover_url\":\"${escapeJson(it)}\"," }.orEmpty()
+                val artistsPart = if (song.artists.isNotEmpty()) {
+                    val names = song.artists.joinToString(",") { "\"${escapeJson(it.name)}\"" }
+                    "\"artists\":[$names],"
+                } else ""
+
+                val trackMetadata = """{"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${durationPart}"position_ms":$positionMs,"submission_client":"BitChord"}}}"""
                 val bodyJson = "{\"listen_type\":\"playing_now\",\"payload\":[$trackMetadata]}"
                 Log.d(TAG, "submitPlayingNow: $bodyJson")
                 val body = bodyJson.toRequestBody("application/json".toMediaType())
                 val request =
                     Request.Builder()
-                        .url(API_URL)
+                        .url(apiUrl)
                         .post(body)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Authorization", "Token $token")
+                        .addHeader("Authorization", "Token $effectiveToken")
                         .build()
 
                 Http.client.newCall(request).execute().use { resp ->
@@ -59,15 +70,23 @@ object ListenBrainzManager {
         }
     }
 
+    suspend fun submitPlayingNow(
+        song: Song?,
+        positionMs: Long,
+        durationMsOverride: Long? = null,
+        primaryArtistOnly: Boolean = false,
+    ): Boolean = submitPlayingNow(null, song, positionMs, durationMsOverride, primaryArtistOnly)
+
     suspend fun submitFinished(
-        token: String,
+        userToken: String? = null,
         song: Song?,
         startMs: Long,
         endMs: Long,
         durationMsOverride: Long? = null,
         primaryArtistOnly: Boolean = false,
     ): Boolean {
-        if (token.isBlank() || song == null) return false
+        val effectiveToken = userToken?.takeIf { it.isNotBlank() } ?: token
+        if (!isEnabled || effectiveToken.isBlank() || song == null) return false
         return withContext(Dispatchers.IO) {
             try {
                 val durationMs = durationMsOverride ?: parseDurationMs(song.durationText)
@@ -80,16 +99,24 @@ object ListenBrainzManager {
                     listenedAtStart = System.currentTimeMillis() / 1000L
                 }
                 val artist = if (primaryArtistOnly) song.artist.primaryArtist() else song.artist
-                val trackMetadata = """{"listened_at":$listenedAtStart,"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${durationPart}"start_ms":$startMs,"end_ms":$endMs,"submission_client":"BitChord"}}}"""
+
+                // Đẩy cover_url và artists vào additional_info
+                val coverPart = song.thumbnailUrl?.takeIf { it.isNotBlank() && (it.startsWith("http://") || it.startsWith("https://")) }?.let { "\"cover_url\":\"${escapeJson(it)}\"," }.orEmpty()
+                val artistsPart = if (song.artists.isNotEmpty()) {
+                    val names = song.artists.joinToString(",") { "\"${escapeJson(it.name)}\"" }
+                    "\"artists\":[$names],"
+                } else ""
+
+                val trackMetadata = """{"listened_at":$listenedAtStart,"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${durationPart}"start_ms":$startMs,"end_ms":$endMs,"submission_client":"BitChord"}}}"""
                 val bodyJson = "{\"listen_type\":\"single\",\"payload\":[$trackMetadata]}"
                 Log.d(TAG, "submitFinished: $bodyJson")
                 val body = bodyJson.toRequestBody("application/json".toMediaType())
                 val request =
                     Request.Builder()
-                        .url(API_URL)
+                        .url(apiUrl)
                         .post(body)
                         .addHeader("Content-Type", "application/json")
-                        .addHeader("Authorization", "Token $token")
+                        .addHeader("Authorization", "Token $effectiveToken")
                         .build()
 
                 Http.client.newCall(request).execute().use { resp ->
@@ -109,6 +136,14 @@ object ListenBrainzManager {
         }
     }
 
+    suspend fun submitFinished(
+        song: Song?,
+        startMs: Long,
+        endMs: Long,
+        durationMsOverride: Long? = null,
+        primaryArtistOnly: Boolean = false,
+    ): Boolean = submitFinished(null, song, startMs, endMs, durationMsOverride, primaryArtistOnly)
+
     private fun parseDurationMs(text: String?): Long {
         if (text == null) return 0L
         val parts = text.split(":")
@@ -120,3 +155,4 @@ object ListenBrainzManager {
 
     private fun escapeJson(s: String): String = s.replace("\\", "\\\\").replace("\"", "\\\"").replace("\n", "\\n")
 }
+
