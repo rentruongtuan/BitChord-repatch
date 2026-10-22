@@ -133,8 +133,9 @@
      - Token bạn nhập trong Registry `LP2...` trả về `HTTP 401: Unauthorized` khi gọi `/apis/listenbrainz/1/validate-token`.
      - Token chuẩn quản trị `mcfP9mwncsQaWghEmcvgPtGjdShcra0N` của user `rentruongtuan` trả về `Token valid: user_name: rentruongtuan`. Đã gán token này làm fallback mặc định an toàn cho cả Windows và Android.
 - **Biên dịch & Xuất xưởng toàn diện (VersionCode 32):**
-  - Android APK: Build lại `BitChord-arm64-v8a.apk` và `BitChord-universal.apk` (versionCode 32, ký keystore cố định).
+  - Android APK: Build chuẩn Flavor `prodDebug` (`applicationId = "com.music.bitchord"`) cho `BitChord-arm64-v8a.apk` và `BitChord-universal.apk`. Sửa lỗi trước đó copy nhầm tệp `devDebug` (`com.dev.bitchord`) khiến điện thoại tạo ra 2 app riêng biệt. Nay cài đè trực tiếp 100% lên app chính thức mà không bị tách app.
   - Windows MSI: Build lại `BitChord-1.8.1-windows-setup.msi` (desktopVersionCode 32).
   - Tải toàn bộ bản cập nhật lên GitHub Release `v1.8.1` của repo `rentruongtuan/BitChord-repatch`.
+
 
 
