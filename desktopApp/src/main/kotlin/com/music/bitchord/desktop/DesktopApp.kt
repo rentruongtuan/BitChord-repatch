@@ -631,7 +631,7 @@ fun BitChordDesktopApp() {
     var statsRevision by remember { mutableStateOf(0L) }
     var replayPeriod by remember { mutableStateOf(DesktopReplayPeriod.ALL_TIME) }
     val replayHolder = remember { DesktopAccounts.active()?.name.orEmpty() }
-    var replaySummary by remember { mutableStateOf(DesktopListeningStats.summary()) }
+    var replaySummary by remember { mutableStateOf(DesktopFloppyStats.getEffectiveSummary()) }
     var statsCountedSongs by remember { mutableStateOf<Set<String>>(emptySet()) }
     var playlistTarget by remember { mutableStateOf<Song?>(null) }
     // One busy flag and one message for every playlist edit: only one of them can be in flight,
@@ -2061,7 +2061,7 @@ fun BitChordDesktopApp() {
         }
     }
     LaunchedEffect(statsRevision) {
-        replaySummary = withContext(Dispatchers.IO) { DesktopListeningStats.summary(replayPeriod) }
+        replaySummary = withContext(Dispatchers.IO) { DesktopFloppyStats.getEffectiveSummary(replayPeriod) }
     }
     DisposableEffect(playbackEngine) {
         onDispose { playbackEngine.release() }
@@ -2630,8 +2630,8 @@ fun BitChordDesktopApp() {
     }
 
     // The charts are period-filtered at read time, so a different period is a different read.
-    LaunchedEffect(replayPeriod) {
-        replaySummary = withContext(Dispatchers.IO) { DesktopListeningStats.summary(replayPeriod) }
+    LaunchedEffect(replayPeriod, overlays.replay) {
+        replaySummary = withContext(Dispatchers.IO) { DesktopFloppyStats.getEffectiveSummary(replayPeriod) }
     }
 
     // Re-scanned when the filter or the folder changes, never on first composition.

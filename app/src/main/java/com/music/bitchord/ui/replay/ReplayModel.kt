@@ -9,6 +9,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import com.music.bitchord.data.stats.ArtistFacts
+import com.music.bitchord.data.stats.FloppyStatsSync
 import com.music.bitchord.data.stats.ListeningStats
 import com.music.bitchord.data.stats.ReplayPeriod
 import com.music.bitchord.data.stats.ReplaySummary
@@ -79,21 +80,14 @@ fun rememberReplayState(active: Boolean): Pair<ReplayState, (ReplayPeriod) -> Un
         // the charts for the beat it takes to merge the files — that reads as
         // the page breaking rather than as it answering a different question.
         loading = summary == null
-        summary = ListeningStats.summary(period)
+        summary = FloppyStatsSync.getEffectiveSummary(period)
         loading = false
 
         // Artist pictures and pages arrive after the page has been built — see
         // [ArtistFacts.revision] — so the charts are rebuilt when they do.
-        //
-        // Collected inside the effect rather than as composed state on purpose:
-        // this function is called from the app's root, so a revision held as
-        // state would recompose the whole tree every time a lookup landed, even
-        // with the Replay closed. `collectLatest` gives the debounce for free —
-        // a burst of lookups cancels each pending delay and only the last one
-        // gets as far as a rebuild.
         ArtistFacts.revision.drop(1).collectLatest {
             delay(SETTLE_MILLIS)
-            summary = ListeningStats.summary(period)
+            summary = FloppyStatsSync.getEffectiveSummary(period)
         }
     }
     return ReplayState(period, summary, loading, memberSince) to

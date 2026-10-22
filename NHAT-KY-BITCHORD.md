@@ -152,3 +152,35 @@
 - **Biên dịch & Đóng gói:**
   - Build Android APK thành công: `release-apk/BitChord-arm64-v8a.apk` (96 MB) và `release-apk/BitChord-universal.apk` (200 MB).
   - Đảm bảo ký bằng keystore cố định `signing/bitchord-debug.keystore` và `applicationId = com.music.bitchord`.
+
+## 2026-10-23 — Đồng bộ Số Liệu Thống Kê Library / Replay Qua Máy Chủ Floppy & Nâng cấp VersionCode 34
+
+- **Bối cảnh & Vấn đề:**
+  - BitChord nguyên bản chỉ tính thời lượng nghe (phút) và bảng xếp hạng bài hát/nghệ sĩ cục bộ trên từng thiết bị (Mobile lưu riêng, PC lưu riêng). Dẫn đến tình trạng lệch số liệu (PC chỉ hiện vài chục phút trong khi Mobile hiện 61 phút).
+  - Người dùng có server Floppy cá nhân (`https://floppy.chutun.xyz`) nhận toàn bộ scrobble từ tất cả các thiết bị với thống kê tổng hợp chính xác (hơn 810 phút, 238 lượt nghe, Top 50 nghệ sĩ và bài hát).
+- **Giải pháp & Triển khai:**
+  1. **Khám phá API Floppy Statistics:**
+     - Endpoint: `GET /api/v1/statistics/overview/` với header `Authorization: Token <token>` và `User-Agent: Mozilla/5.0 ...`.
+     - Phản hồi chứa đối tượng `statistics.music_consumption` bao gồm:
+       - `minutes` & `plays` theo từng kỳ: `this_week`, `this_month`, `this_year`, `total`.
+       - `top_tracks`: Top 50 bài hát kèm số phút, lượt nghe, ảnh bìa (`album_image` / `cover_url`).
+       - `top_artists`: Top 50 nghệ sĩ kèm ảnh chân dung (`image` / `picture_url`), số phút, lượt nghe.
+       - `top_albums` & `top_genres`.
+       - `weekday_hour_chart_data.music`: 7 mảng 24 giờ nghe nhạc.
+       - `activity_data.calendar_weeks`: Biểu đồ hoạt động và ngày nghe nhiều nhất (`busiestDay`).
+  2. **Triển khai trên Desktop (`desktopApp`):**
+     - Tạo module `DesktopFloppyStats.kt`: Gọi API Floppy (timeout 30s để xử lý tổng hợp dữ liệu lớn), chuyển đổi sang `DesktopReplaySummary`, tích hợp bộ đệm cache 60s.
+     - Hàm `getEffectiveSummary()`: Ưu tiên nạp số liệu từ Floppy khi có kết nối mạng và dữ liệu; tự động fallback về số liệu cục bộ nếu offline.
+     - Cập nhật `DesktopApp.kt`: Nạp `DesktopFloppyStats.getEffectiveSummary()` khi mở Replay hoặc khi đổi chu kỳ (Tháng, Năm, All-time).
+  3. **Triển khai trên Android (`app`):**
+     - Tạo module `FloppyStatsSync.kt`: Sử dụng `Http.client` của app, đồng bộ tương tự sang `ReplaySummary`.
+     - Cập nhật `ReplayModel.kt`: Tích hợp `FloppyStatsSync.getEffectiveSummary(period)`.
+     - Nhờ đó, cả thẻ Replay ở đầu tab Library và toàn bộ trang chi tiết Replay đều đồng bộ 100% với dữ liệu từ server Floppy.
+  4. **Tăng Version Code & Đóng gói Phân phối:**
+     - `build.gradle.kts`: Nâng `bitchordVersionCode = 34`, `bitchordVersionName = "1.8.3"`.
+     - `desktopApp/build.gradle.kts`: Nâng `desktopVersionCode = 34`.
+     - Build thành công:
+       - Windows: `release-apk/BitChord-1.8.3-windows-setup.msi` (319 MB).
+       - Android: `release-apk/BitChord-arm64-v8a.apk` (96 MB), `release-apk/BitChord-universal.apk` (200 MB).
+       - Đảm bảo ký đúng keystore cố định `signing/bitchord-debug.keystore`.
+
