@@ -34,14 +34,17 @@ object ListenBrainzManager {
                 val releasePart = if (releaseName.isBlank()) "" else "\"release_name\":\"${escapeJson(releaseName)}\","
                 val artist = if (primaryArtistOnly) song.artist.primaryArtist() else song.artist
                 
-                // Đẩy cover_url và artists vào additional_info
+                // Đẩy cover_url, artists và origin_url vào additional_info
                 val coverPart = song.thumbnailUrl?.takeIf { it.isNotBlank() && (it.startsWith("http://") || it.startsWith("https://")) }?.let { "\"cover_url\":\"${escapeJson(it)}\"," }.orEmpty()
                 val artistsPart = if (song.artists.isNotEmpty()) {
                     val names = song.artists.joinToString(",") { "\"${escapeJson(it.name)}\"" }
                     "\"artists\":[$names],"
                 } else ""
+                val originUrlPart = if (song.videoId.isNotBlank()) {
+                    "\"origin_url\":\"https://www.youtube.com/watch?v=${escapeJson(song.videoId)}\","
+                } else ""
 
-                val trackMetadata = """{"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${durationPart}"position_ms":$positionMs,"submission_client":"BitChord"}}}"""
+                val trackMetadata = """{"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${originUrlPart}${durationPart}"position_ms":$positionMs,"submission_client":"BitChord"}}}"""
                 val bodyJson = "{\"listen_type\":\"playing_now\",\"payload\":[$trackMetadata]}"
                 Log.d(TAG, "submitPlayingNow: $bodyJson")
                 val body = bodyJson.toRequestBody("application/json".toMediaType())
@@ -101,14 +104,17 @@ object ListenBrainzManager {
                 }
                 val artist = if (primaryArtistOnly) song.artist.primaryArtist() else song.artist
 
-                // Đẩy cover_url và artists vào additional_info
+                // Đẩy cover_url, artists và origin_url vào additional_info
                 val coverPart = song.thumbnailUrl?.takeIf { it.isNotBlank() && (it.startsWith("http://") || it.startsWith("https://")) }?.let { "\"cover_url\":\"${escapeJson(it)}\"," }.orEmpty()
                 val artistsPart = if (song.artists.isNotEmpty()) {
                     val names = song.artists.joinToString(",") { "\"${escapeJson(it.name)}\"" }
                     "\"artists\":[$names],"
                 } else ""
+                val originUrlPart = if (song.videoId.isNotBlank()) {
+                    "\"origin_url\":\"https://www.youtube.com/watch?v=${escapeJson(song.videoId)}\","
+                } else ""
 
-                val trackMetadata = """{"listened_at":$listenedAtStart,"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${durationPart}"start_ms":$startMs,"end_ms":$endMs,"submission_client":"BitChord"}}}"""
+                val trackMetadata = """{"listened_at":$listenedAtStart,"track_metadata":{"artist_name":"${escapeJson(artist)}","track_name":"${escapeJson(song.title)}",$releasePart"additional_info":{${coverPart}${artistsPart}${originUrlPart}${durationPart}"start_ms":$startMs,"end_ms":$endMs,"submission_client":"BitChord"}}}"""
                 val bodyJson = "{\"listen_type\":\"single\",\"payload\":[$trackMetadata]}"
                 Log.d(TAG, "submitFinished: $bodyJson")
                 val body = bodyJson.toRequestBody("application/json".toMediaType())

@@ -137,5 +137,18 @@
   - Windows MSI: Build lại `BitChord-1.8.1-windows-setup.msi` (desktopVersionCode 32).
   - Tải toàn bộ bản cập nhật lên GitHub Release `v1.8.1` của repo `rentruongtuan/BitChord-repatch`.
 
+## 2026-10-22 — Bổ sung Link YouTube (`origin_url`) vào Scrobble & Nâng cấp VersionCode 33
 
-
+- **Yêu cầu & Mục tiêu:**
+  - Bổ sung URL YouTube (`https://www.youtube.com/watch?v={videoId}`) vào metadata scrobble mỗi lần phát nhạc, giúp server Floppy lưu giữ link video/audio gốc chính xác của từng lần nghe.
+  - Phân tích và bảo toàn tính toàn vẹn: Server Floppy gom nhóm theo `track_name + artist_name` nên không làm loãng xếp hạng, đồng thời lưu đúng link gốc trong nhật ký phát.
+  - Tăng `versionCode` lên 33 để đảm bảo cập nhật cài đè (in-place update) trên Android không mất tài khoản và dữ liệu.
+- **Thực hiện:**
+  - `app/src/main/java/com/music/bitchord/data/scrobbling/ListenBrainzManager.kt`:
+    - Thêm `origin_url` vào `additional_info` cho cả `submitPlayingNow` và `submitFinished`.
+  - `desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopScrobbling.kt`:
+    - Thêm `origin_url` vào `additional_info` cho cả desktop playback.
+  - `build.gradle.kts`: Nâng `bitchordVersionCode = 33`.
+- **Biên dịch & Đóng gói:**
+  - Build Android APK thành công: `release-apk/BitChord-arm64-v8a.apk` (96 MB) và `release-apk/BitChord-universal.apk` (200 MB).
+  - Đảm bảo ký bằng keystore cố định `signing/bitchord-debug.keystore` và `applicationId = com.music.bitchord`.

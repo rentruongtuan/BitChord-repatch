@@ -327,6 +327,9 @@ object DesktopScrobbling {
                                             if (coverUrl != null) {
                                                 put("cover_url", coverUrl)
                                             }
+                                            if (song.videoId.isNotBlank()) {
+                                                put("origin_url", "https://www.youtube.com/watch?v=${song.videoId}")
+                                            }
                                             if (song.artists.isNotEmpty()) {
                                                 putJsonArray("artists") {
                                                     song.artists.forEach { add(JsonPrimitive(it.name)) }
