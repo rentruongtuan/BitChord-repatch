@@ -243,33 +243,46 @@ internal fun DesktopSpotifyCanvasDialog(onDismiss: () -> Unit, onSaved: (String)
  */
 @Composable
 internal fun DesktopListenBrainzTokenDialog(onDismiss: () -> Unit) {
+    var endpoint by remember { mutableStateOf(DesktopScrobbleSettings.listenBrainzEndpoint.value) }
     var token by remember { mutableStateOf(DesktopScrobbleSettings.listenBrainzToken.value) }
     val focus = remember { FocusRequester() }
     LaunchedEffect(Unit) { runCatching { focus.requestFocus() } }
 
     fun save() {
+        val targetEndpoint = endpoint.trim().ifBlank { DesktopScrobbleSettings.DEFAULT_LISTENBRAINZ_ENDPOINT }
+        DesktopScrobbleSettings.setListenBrainzEndpoint(targetEndpoint)
         DesktopScrobbleSettings.setListenBrainzToken(token.trim())
         DesktopScrobbleSettings.setListenBrainzEnabled(token.isNotBlank())
         onDismiss()
     }
 
-    DesktopDialogPanel(onDismiss = onDismiss, maxWidth = 380) {
+    DesktopDialogPanel(onDismiss = onDismiss, maxWidth = 420) {
         DialogHeading(
-            title = DesktopStrings["listenbrainz_token", "ListenBrainz token"],
-            message = DesktopStrings["d_found_on_your_listenbrainz_profile_under_settings", "Found on your ListenBrainz profile, under Settings."],
+            title = "ListenBrainz / Floppy",
+            message = "Scrobble trực tiếp sang Floppy hoặc ListenBrainz. Mặc định dùng máy chủ Floppy.",
         )
+        DialogField(
+            value = endpoint,
+            onValueChange = { endpoint = it },
+            placeholder = "Endpoint URL (${DesktopScrobbleSettings.DEFAULT_LISTENBRAINZ_ENDPOINT})",
+            imeAction = ImeAction.Next,
+        )
+        Spacer(Modifier.height(8.dp))
         DialogField(
             value = token,
             onValueChange = { token = it },
-            placeholder = DesktopStrings["api_token", "API token"],
+            placeholder = DesktopStrings["api_token", "API token (User Token)"],
             isPassword = true,
             onSubmit = ::save,
             modifier = Modifier.focusRequester(focus),
         )
         Row(
             Modifier.fillMaxWidth().padding(horizontal = panelInset(22.dp)),
-            horizontalArrangement = Arrangement.Start,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
+            TextButton(onClick = { DesktopExternalLinks.open("https://floppy.chutun.xyz") }) {
+                Text("Open Floppy", color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
+            }
             TextButton(onClick = { DesktopExternalLinks.open("https://listenbrainz.org/settings/") }) {
                 Text(DesktopStrings["d_open_listenbrainz", "Open ListenBrainz"], color = DesktopSecondary, style = MaterialTheme.typography.bodySmall)
             }

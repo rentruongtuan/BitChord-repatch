@@ -34,6 +34,7 @@ internal object DesktopScrobbleSettings {
 
     private val _listenBrainzEnabled = flag(KEY_LISTENBRAINZ_ENABLED, false)
     private val _listenBrainzToken = text(KEY_LISTENBRAINZ_TOKEN)
+    private val _listenBrainzEndpoint = MutableStateFlow(persistence.string(KEY_LISTENBRAINZ_ENDPOINT, DEFAULT_LISTENBRAINZ_ENDPOINT))
     private val _listenBrainzPrimaryArtistOnly = flag(KEY_LISTENBRAINZ_PRIMARY_ARTIST, false)
 
     private val _minDuration = MutableStateFlow(persistence.int(KEY_MIN_DURATION, DEFAULT_MIN_DURATION))
@@ -51,6 +52,7 @@ internal object DesktopScrobbleSettings {
 
     val listenBrainzEnabled: StateFlow<Boolean> = _listenBrainzEnabled
     val listenBrainzToken: StateFlow<String> = _listenBrainzToken
+    val listenBrainzEndpoint: StateFlow<String> = _listenBrainzEndpoint
     val listenBrainzPrimaryArtistOnly: StateFlow<Boolean> = _listenBrainzPrimaryArtistOnly
 
     val minDuration: StateFlow<Int> = _minDuration
@@ -70,6 +72,11 @@ internal object DesktopScrobbleSettings {
     fun setListenBrainzToken(value: String) {
         persistence.saveString(KEY_LISTENBRAINZ_TOKEN, value)
         _listenBrainzToken.value = value
+    }
+
+    fun setListenBrainzEndpoint(value: String) {
+        persistence.saveString(KEY_LISTENBRAINZ_ENDPOINT, value)
+        _listenBrainzEndpoint.value = value
     }
 
     fun setLastfmApiKey(value: String) {
@@ -132,11 +139,13 @@ internal object DesktopScrobbleSettings {
     private const val KEY_LASTFM_API_SECRET = "lastfm_api_secret"
     private const val KEY_LISTENBRAINZ_ENABLED = "listenbrainz_enabled"
     private const val KEY_LISTENBRAINZ_TOKEN = "listenbrainz_token"
+    private const val KEY_LISTENBRAINZ_ENDPOINT = "listenbrainz_endpoint"
     private const val KEY_LISTENBRAINZ_PRIMARY_ARTIST = "listenbrainz_primary_artist_only"
     private const val KEY_MIN_DURATION = "scrobble_min_duration"
     private const val KEY_DELAY_PERCENT = "scrobble_delay_percent"
     private const val KEY_DELAY_SECONDS = "scrobble_delay_seconds"
 
+    const val DEFAULT_LISTENBRAINZ_ENDPOINT = "https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens"
     const val DEFAULT_MIN_DURATION = 30
     const val DEFAULT_DELAY_PERCENT = 0.5f
     const val DEFAULT_DELAY_SECONDS = 180

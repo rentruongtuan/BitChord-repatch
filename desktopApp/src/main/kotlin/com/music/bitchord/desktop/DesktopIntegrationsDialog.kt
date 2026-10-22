@@ -376,8 +376,8 @@ private fun ScrobblingSection(onOpenLastfm: () -> Unit, onOpenListenBrainz: () -
         footer = "Scrobble your listens to Last.fm and ListenBrainz.",
     ) {
         PanelSwitchRow(
-            title = "ListenBrainz",
-            subtitle = if (lbEnabled && lbToken.isNotBlank()) "Connected" else "Enter a token to enable",
+            title = "ListenBrainz / Floppy",
+            subtitle = if (lbEnabled && lbToken.isNotBlank()) "Connected to Floppy / ListenBrainz" else "Tap to set Token & Endpoint",
             checked = lbEnabled,
             onCheckedChange = { checked ->
                 if (checked && lbToken.isBlank()) onOpenListenBrainz()
@@ -438,7 +438,8 @@ private fun ScrobblingSection(onOpenLastfm: () -> Unit, onOpenListenBrainz: () -
         }
     }
 
-    if (lastfmEnabled && signedIn) {
+    val timingActive = (lastfmEnabled && signedIn) || (lbEnabled && lbToken.isNotBlank())
+    if (timingActive) {
         val minDuration by DesktopScrobbleSettings.minDuration.collectAsState()
         val delayPercent by DesktopScrobbleSettings.delayPercent.collectAsState()
         val delaySeconds by DesktopScrobbleSettings.delaySeconds.collectAsState()

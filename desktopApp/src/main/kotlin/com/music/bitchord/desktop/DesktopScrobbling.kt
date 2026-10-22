@@ -54,7 +54,6 @@ object DesktopScrobbling {
     private var timerStartedAtMs = 0L
     private var remainingMs = 0L
     private var scrobbleJob: Job? = null
-    private var lastFmScrobbled = false
 
     /** Whether this build can sign in at all — no key, no login. */
     val canSignInToLastFm: Boolean
@@ -74,7 +73,8 @@ object DesktopScrobbling {
             DesktopScrobbleSettings.lastfmEnabled.value
 
     val listenBrainzConfigured: Boolean
-        get() = DesktopScrobbleSettings.listenBrainzEnabled.value || listenBrainzToken().isNotBlank()
+        get() = (DesktopScrobbleSettings.listenBrainzEnabled.value || listenBrainzToken().isNotBlank()) &&
+            listenBrainzToken().isNotBlank()
 
     // A key the listener entered in Settings wins; a build that baked one in
     // (or ran with one in the environment) is the fallback, exactly as on
@@ -92,7 +92,8 @@ object DesktopScrobbling {
             ?: env("BITCHORD_LASTFM_SESSION_KEY")
 
     private fun listenBrainzEndpoint(): String =
-        property("bitchord.listenbrainz.endpoint")
+        DesktopScrobbleSettings.listenBrainzEndpoint.value.takeIf(String::isNotBlank)
+            ?: property("bitchord.listenbrainz.endpoint")
             ?: env("BITCHORD_LISTENBRAINZ_ENDPOINT")
             ?: DEFAULT_FLOPPY_ENDPOINT
 
@@ -136,6 +137,8 @@ object DesktopScrobbling {
         if (listenBrainzConfigured) submitListenBrainz(song, "single", activeStartedAtMs, song.durationMillis(), timestamp)
     }
 
+    private var isScrobbled = false
+
     /** Mirrors Android's thresholded scrobble timer and pause/resume semantics. */
     @Synchronized
     fun onPlaybackStateChanged(state: DesktopPlaybackState) {
@@ -146,13 +149,15 @@ object DesktopScrobbling {
             activeStartedAtMs = System.currentTimeMillis()
             timerStartedAtMs = 0L
             remainingMs = 0L
-            lastFmScrobbled = false
+            isScrobbled = false
+            // Send Now Playing notification to ListenBrainz / Floppy immediately
+            scope.launch { updateNowPlaying(song) }
         }
         if (!state.isPlaying) {
             pauseTimerLocked()
             return
         }
-        if (remainingMs == 0L && !lastFmScrobbled) {
+        if (remainingMs == 0L && !isScrobbled) {
             val durationMs = state.durationMs.takeIf { it > 0 } ?: song.durationMillis()
             if (durationMs > DesktopScrobbleSettings.minDuration.value * 1_000L) {
                 remainingMs = min(
@@ -164,19 +169,27 @@ object DesktopScrobbling {
         if (remainingMs > 0L && scrobbleJob?.isActive != true) {
             timerStartedAtMs = System.currentTimeMillis()
             val id = song.videoId
+            val startedAt = activeStartedAtMs
             scrobbleJob = scope.launch {
                 delay(remainingMs)
                 val shouldSend = synchronized(this@DesktopScrobbling) {
-                    if (activeSongId != id || lastFmScrobbled) false
+                    if (activeSongId != id || isScrobbled) false
                     else {
-                        lastFmScrobbled = true
+                        isScrobbled = true
                         remainingMs = 0L
                         timerStartedAtMs = 0L
                         true
                     }
                 }
-                if (shouldSend && lastFmConfigured) {
-                    submitLastFm(song, activeStartedAtMs / 1_000L)
+                if (shouldSend) {
+                    val duration = song.durationMillis()
+                    val ts = startedAt / 1_000L
+                    if (lastFmConfigured) {
+                        submitLastFm(song, ts)
+                    }
+                    if (listenBrainzConfigured) {
+                        submitListenBrainz(song, "single", startedAt, duration, ts)
+                    }
                 }
             }
         }
@@ -184,19 +197,25 @@ object DesktopScrobbling {
 
     /** Sends ListenBrainz's finished listen and avoids duplicate Last.fm sends. */
     fun onPlaybackEnded(song: Song) {
-        val startedAt = synchronized(this) {
+        val (startedAt, shouldSend) = synchronized(this) {
             scrobbleJob?.cancel()
             timerStartedAtMs = 0L
-            activeStartedAtMs.takeIf { activeSongId == song.videoId } ?: System.currentTimeMillis()
+            val started = activeStartedAtMs.takeIf { activeSongId == song.videoId } ?: System.currentTimeMillis()
+            val send = !isScrobbled
+            isScrobbled = true
+            started to send
         }
+        if (!shouldSend) return
         scope.launch {
             try {
                 val minDurationMs = DesktopScrobbleSettings.minDuration.value * 1_000L
-                if (!lastFmScrobbled && lastFmConfigured && song.durationMillis() > minDurationMs) {
-                    submitLastFm(song, startedAt / 1_000L)
+                val duration = song.durationMillis()
+                val ts = startedAt / 1_000L
+                if (lastFmConfigured && duration > minDurationMs) {
+                    submitLastFm(song, ts)
                 }
                 if (listenBrainzConfigured) {
-                    submitListenBrainz(song, "single", startedAt, song.durationMillis(), System.currentTimeMillis() / 1_000L)
+                    submitListenBrainz(song, "single", startedAt, duration, ts)
                 }
             } catch (_: CancellationException) {
                 throw CancellationException()

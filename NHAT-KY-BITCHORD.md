@@ -91,6 +91,31 @@
     - Desktop: `desktopApp/src/main/kotlin/com/music/bitchord/desktop/DesktopUpdateChecker.kt` trỏ `LATEST_RELEASE_URL` về `repos/rentruongtuan/BitChord-repatch/releases/latest`.
   - Nâng cấp thuật toán `apkAssetUrl` trên Android: Tự động phân tích ABI của thiết bị người dùng (ưu tiên tải bản nhẹ `arm64-v8a` 96MB cho các điện thoại đời mới thay vì phải tải bản universal 199MB).
   - Nâng cấp thuật toán `installerUrl` trên Desktop: Tự động nhận diện và tải đúng tệp `.msi` (Windows) hoặc `.AppImage` (CachyOS/Linux).
-  - Nâng `bitchordVersionCode = 31` và ký cố định bằng `signing/bitchord-debug.keystore` để đảm bảo cài đè trực tiếp (In-place update) không mất dữ liệu.
+- Nâng `bitchordVersionCode = 31` và ký cố định bằng `signing/bitchord-debug.keystore` để đảm bảo cài đè trực tiếp (In-place update) không mất dữ liệu.
   - Sau này mỗi khi có bản mod mới: Chỉ cần push release lên GitHub của REN, các thiết bị (Android, Windows, CachyOS) khi mở app sẽ tự động nhận diện bản mới và cập nhật trực tiếp qua Internet chỉ với 1 chạm.
+
+## 2026-10-22 — Sửa Lỗi Scrobble Floppy / ListenBrainz Trên Windows Desktop
+
+- **Hiện tượng & Nguyên nhân gốc rễ:**
+  1. **Thiếu scrobble ở ngưỡng 50% trong coroutine timer:** Khi bài hát đạt 50% thời lượng hoặc 180s, `DesktopScrobbling.onPlaybackStateChanged` chỉ gọi `submitLastFm` mà **hoàn toàn bỏ quên `submitListenBrainz`**. ListenBrainz trước đó chỉ được gọi khi bài hát kết thúc 100% (`onPlaybackEnded`). Do đó, nếu người dùng chuyển bài hoặc bấm Next giữa chừng thì không bao giờ scrobble lên Floppy.
+  2. **Thiếu kích hoạt `playing_now` khi bài hát bắt đầu:** Khi bài hát đổi ID, không tự động gọi `updateNowPlaying` để báo bài hát đang phát sang Floppy.
+  3. **Thiếu trường cấu hình Endpoint Floppy trong UI Desktop:** Hộp thoại cài đặt ListenBrainz trước đây chỉ có 1 ô nhập Token, không có ô nhập URL Server (khiến người dùng không rõ nó đang gửi về listenbrainz.org hay floppy.chutun.xyz).
+  4. **Logic hiển thị Scrobble Timing bị ẩn:** Thanh trượt thời gian Scrobble Timing bị ràng buộc bởi `lastfmEnabled && signedIn`, người dùng chỉ bật ListenBrainz thì không thấy phần cài đặt thời gian trễ scrobble.
+- **Biện pháp khắc phục:**
+  1. `DesktopScrobbleSettings.kt`:
+     - Thêm trường `listenBrainzEndpoint` lưu trữ bền vững trong `DesktopPersistence`.
+     - Đặt mặc định `DEFAULT_LISTENBRAINZ_ENDPOINT = "https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens"`.
+  2. `DesktopScrobbling.kt`:
+     - Đổi tên biến trạng thái thành `isScrobbled`.
+     - Tự động gọi `updateNowPlaying(song)` ngay khi bài hát bắt đầu phát để hiển thị "Playing Now" trên Floppy.
+     - Khi bộ đếm thời gian scrobble chạm ngưỡng (50% hoặc 180s), tự động gửi đồng thời cả Last.fm và Floppy / ListenBrainz (`submitListenBrainz(song, "single", startedAt, duration, ts)`).
+     - Trong `onPlaybackEnded`, chỉ scrobble nếu bài hát chưa được scrobble trước đó (tránh nhân đôi lượt nghe).
+  3. `DesktopIntegrationsUi.kt` & `DesktopIntegrationsDialog.kt`:
+     - Nâng cấp hộp thoại ListenBrainz: Thêm ô nhập **Endpoint URL** (mặc định sẵn `https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens`), kèm nút mở nhanh Floppy và ListenBrainz.
+     - Đổi nhãn thành **"ListenBrainz / Floppy"** và hiển thị rõ trạng thái kết nối.
+     - Mở khóa hiển thị mục **"Scrobble timing"** khi ListenBrainz hoặc Last.fm được bật.
+- **Biên dịch & Cập nhật:**
+  - Build lại bộ cài đặt chuẩn Windows: `release-desktop\BitChord-1.8.1-windows-setup.msi`.
+  - Cập nhật trực tiếp tệp MSI lên GitHub Release `v1.8.1` của repo `rentruongtuan/BitChord-repatch`.
+
 
