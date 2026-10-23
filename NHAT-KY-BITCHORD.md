@@ -217,3 +217,18 @@ entruongtuan.
     - `release-apk/BitChord-arm64-v8a.apk` (92 MB - dành cho điện thoại hiện đại).
     - `release-apk/BitChord-universal.apk` (191 MB - tương thích toàn bộ kiến trúc).
   - Đảm bảo ký đúng keystore cố định `signing/bitchord-debug.keystore`, cho phép cài đè trực tiếp (in-place update) trên điện thoại mà không mất dữ liệu, playlist hay tài khoản.
+
+## 2026-10-24 — Sửa Dứt Điểm Lỗi Floppy 504 Gateway Timeout & Đồng Bộ Hoá Replay/Library
+
+- **Nguyên nhân gốc rễ gây lỗi 504 Gateway Timeout trên Floppy:**
+  1. **Spam Request từ BitChord Desktop:** Trong `DesktopApp.kt` (dòng 2063 cũ), `LaunchedEffect(statsRevision)` gọi `DesktopFloppyStats.getEffectiveSummary()` mỗi giây một lần khi bài hát đang phát (`statsRevision++`). Khi request gặp lỗi hoặc timeout, không có cơ chế backoff khiến app dội bom liên tục.
+  2. **Nghẽn cổ chai Gunicorn (1 Worker):** Floppy mặc định chỉ chạy 1 worker (`WEB_CONCURRENCY=1`). Mỗi lần gọi `/api/v1/statistics/overview/`, Floppy tốn tới 65.5 giây và chạy hơn 8,100 câu truy vấn DB. Worker duy nhất bị kẹt cứng làm mọi request khác (như xem `/history` trên web hoặc Docker healthcheck) bị xếp hàng chờ.
+  3. **Nginx Timeout 60s mặc định:** Nginx trong Floppy không cấu hình `proxy_read_timeout` nên sau 60s chờ Gunicorn, Nginx lập tức trả về mã lỗi 504 Gateway Timeout về Cloudflare.
+- **Giải pháp trên máy chủ Floppy (ZimaCube):**
+  1. Cập nhật `docker-compose.yml`: Bổ sung `WEB_CONCURRENCY=2` và `GUNICORN_THREADS=4` (chạy 2 workers, 8 threads đồng thời). Một worker tính toán tác vụ nặng thì worker còn lại vẫn phục vụ web UI, scrobble, healthcheck tức thì.
+  2. Nâng `proxy_read_timeout 180s;`, `proxy_connect_timeout 60s;` trong Nginx của Floppy thông qua `entrypoint.sh`.
+  3. Kích hoạt đúng bản vá `reapply_listenbrainz_cover.py` trước `exec /runtime-entrypoint.sh`.
+- **Giải pháp trên BitChord Desktop & Android:**
+  1. Gỡ bỏ hoàn toàn `LaunchedEffect(statsRevision)` trong `DesktopApp.kt`. Chỉ nạp lại Replay khi người dùng mở thẻ Replay hoặc chuyển tab.
+  2. Bổ sung cơ chế Failure Backoff trong `DesktopFloppyStats.kt` và `FloppyStatsSync.kt`: Khi request thất bại hoặc timeout, ghi nhận `lastFetchTime = now` và chờ ít nhất 60s mới thử lại, không spam server.
+  3. Biên dịch lại và cập nhật toàn bộ APK và AppImage v1.8.4 lên GitHub Release.
