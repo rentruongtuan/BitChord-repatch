@@ -42,7 +42,7 @@ object FloppyStatsSync {
     suspend fun fetchOverview(forceRefresh: Boolean = false): JsonObject? = withContext(Dispatchers.IO) {
         val now = System.currentTimeMillis()
         synchronized(lock) {
-            if (!forceRefresh && cachedJson != null && (now - lastFetchTime) < CACHE_MS) {
+            if (!forceRefresh && (now - lastFetchTime) < CACHE_MS) {
                 return@withContext cachedJson
             }
         }
@@ -67,9 +67,15 @@ object FloppyStatsSync {
                     return@withContext parsed
                 }
             }
-            null
+            synchronized(lock) {
+                lastFetchTime = now
+            }
+            cachedJson
         } catch (_: Exception) {
-            null
+            synchronized(lock) {
+                lastFetchTime = now
+            }
+            cachedJson
         }
     }
 

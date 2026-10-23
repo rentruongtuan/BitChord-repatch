@@ -2060,9 +2060,7 @@ fun BitChordDesktopApp() {
             previousPosition = position
         }
     }
-    LaunchedEffect(statsRevision) {
-        replaySummary = withContext(Dispatchers.IO) { DesktopFloppyStats.getEffectiveSummary(replayPeriod) }
-    }
+
     DisposableEffect(playbackEngine) {
         onDispose { playbackEngine.release() }
     }

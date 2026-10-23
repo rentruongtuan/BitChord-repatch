@@ -42,7 +42,7 @@ object DesktopFloppyStats {
     fun fetchOverview(forceRefresh: Boolean = false): JsonObject? {
         val now = System.currentTimeMillis()
         synchronized(lock) {
-            if (!forceRefresh && cachedJson != null && (now - lastFetchTime) < CACHE_MS) {
+            if (!forceRefresh && (now - lastFetchTime) < CACHE_MS) {
                 return cachedJson
             }
         }
@@ -52,7 +52,7 @@ object DesktopFloppyStats {
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
                 connectTimeout = 15_000
-                readTimeout = 30_000
+                readTimeout = 45_000
                 instanceFollowRedirects = true
                 setRequestProperty("Authorization", "Token ${getToken()}")
                 setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 BitChord/1.8")
@@ -71,12 +71,17 @@ object DesktopFloppyStats {
             } else {
                 val errText = conn.errorStream?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
                 println("Floppy response error HTTP $code: $errText")
-                null
+                synchronized(lock) {
+                    lastFetchTime = now
+                }
+                cachedJson
             }
         } catch (e: Exception) {
             println("Floppy fetch exception: ${e.message}")
-            e.printStackTrace()
-            null
+            synchronized(lock) {
+                lastFetchTime = now
+            }
+            cachedJson
         }
     }
 
