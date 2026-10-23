@@ -126,14 +126,6 @@ class ScrobbleManager(
                     album = song.albumName,
                 ).onSuccess {
                     Log.d(TAG, "Scrobbled: ${song.title} by ${song.artist}")
-            // Bắn trực tiếp sang Floppy kèm cover_url và artists
-            ListenBrainzManager.submitFinished(
-                song = song,
-                startMs = songStartedAt * 1000L,
-                endMs = System.currentTimeMillis(),
-                durationMsOverride = durationSeconds * 1000L,
-                primaryArtistOnly = usePrimaryArtistOnly
-            )
                 }.onFailure { throwable ->
                     if (throwable is CancellationException) throw throwable
                     Log.e(TAG, "Failed to scrobble: ${song.title}", throwable)
@@ -152,12 +144,6 @@ class ScrobbleManager(
                     duration = song.durationText?.let { parseDurationSeconds(it) },
                 ).onSuccess {
                     Log.d(TAG, "Updated now playing: ${song.title}")
-            // Cập nhật Now Playing lên Floppy
-            ListenBrainzManager.submitPlayingNow(
-                song = song,
-                positionMs = 0L,
-                primaryArtistOnly = usePrimaryArtistOnly
-            )
                 }.onFailure { throwable ->
                     if (throwable is CancellationException) throw throwable
                     Log.e(TAG, "Failed to update now playing: ${song.title}", throwable)

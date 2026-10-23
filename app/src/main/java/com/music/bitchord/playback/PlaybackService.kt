@@ -672,6 +672,10 @@ class PlaybackService : MediaLibraryService() {
     private var listenBrainzStartMs: Long = 0L
 
     private var listenBrainzDurationMs: Long? = null
+    private var listenBrainzIsScrobbled: Boolean = false
+    private var listenBrainzScrobbleJob: Job? = null
+    private var listenBrainzTimerStartedAt: Long = 0L
+    private var listenBrainzRemainingMillis: Long = 0L
 
     /**
      * The gateway connection publishing what's playing to Discord, or null when
@@ -896,7 +900,7 @@ class PlaybackService : MediaLibraryService() {
             // lock screen arriving as an afternoon of listening.
             if (!isPlaying) ListeningRecorder.onStopped()
 
-            // ListenBrainz: "now playing" on play/resume too, not just on
+            // ListenBrainz: "now playing" and timer on play/resume too, not just on
             // transition — a track started from idle or resumed from pause
             // otherwise stays silent on the site.
             if (isPlaying && song != null) {
@@ -904,10 +908,19 @@ class PlaybackService : MediaLibraryService() {
                     listenBrainzSong = song
                     listenBrainzStartMs = System.currentTimeMillis()
                     listenBrainzDurationMs = durationMs
-                } else if (listenBrainzDurationMs == null) {
-                    listenBrainzDurationMs = durationMs
+                    listenBrainzIsScrobbled = false
+                    submitListenBrainzPlayingNow(song, exoPlayer.currentPosition, durationMs)
+                    startListenBrainzTimer(song, durationMs)
+                } else {
+                    if (listenBrainzDurationMs == null) {
+                        listenBrainzDurationMs = durationMs
+                    }
+                    if (!listenBrainzIsScrobbled) {
+                        resumeListenBrainzTimer(song, durationMs)
+                    }
                 }
-                submitListenBrainzPlayingNow(song, exoPlayer.currentPosition, durationMs)
+            } else if (!isPlaying) {
+                pauseListenBrainzTimer()
             }
 
             // Discord: a pause has to clear the presence, not just stop
@@ -1058,17 +1071,21 @@ class PlaybackService : MediaLibraryService() {
                 PlaybackTracker.onPlaybackFinished(lastPositionSeconds)
                 lastPositionSeconds = 0
                 // The last track finished with nothing after it, so no
-                // transition will ever close it out. Scrobble it now.
+                // transition will ever close it out. Scrobble it now if not already scrobbled.
                 val lastSong = listenBrainzSong
-                if (lastSong != null && listenBrainzStartMs > 0L) {
+                if (lastSong != null && !listenBrainzIsScrobbled && listenBrainzStartMs > 0L) {
                     val lastStart = listenBrainzStartMs
                     val lastDuration = listenBrainzDurationMs
                         ?: exoPlayer.duration.takeIf { it > 0 }
                     submitListenBrainzFinished(lastSong, lastStart, lastDuration)
+                    listenBrainzIsScrobbled = true
                 }
+                listenBrainzScrobbleJob?.cancel()
+                listenBrainzScrobbleJob = null
                 listenBrainzSong = null
                 listenBrainzStartMs = 0L
                 listenBrainzDurationMs = null
+                listenBrainzIsScrobbled = false
                 // A missed/empty AutoPlay response can let the last queued
                 // track finish before anything is appended. There will be no
                 // item transition to run the ordinary refill path, so give the
@@ -3476,22 +3493,29 @@ class PlaybackService : MediaLibraryService() {
             scrobbleManager?.onSongStart(newSong, durationMs)
         }
 
-        // ListenBrainz: submit finished for old song, playing_now for new song.
-        // The finished listen only counts when the track actually ended —
-        // an auto-advance, a repeat, or a crossfade at the very end. A
-        // manual skip (SEEK) means the song wasn't listened to, so it must
-        // not be scrobbled.
+        // ListenBrainz: submit finished for old song if not yet scrobbled, playing_now & timer for new song.
         val ended = previousEnded
         val prevSong = listenBrainzSong
         val prevStart = listenBrainzStartMs
-        if (prevSong != null && ended && prevStart > 0L) {
-            submitListenBrainzFinished(prevSong, prevStart, listenBrainzDurationMs)
+        if (prevSong != null && !listenBrainzIsScrobbled && prevStart > 0L) {
+            val minDurationMs = AppSettings.scrobbleMinDuration.value * 1000L
+            val listenedMs = System.currentTimeMillis() - prevStart
+            if (ended || listenedMs >= minDurationMs) {
+                submitListenBrainzFinished(prevSong, prevStart, listenBrainzDurationMs)
+                listenBrainzIsScrobbled = true
+            }
         }
+        listenBrainzScrobbleJob?.cancel()
+        listenBrainzScrobbleJob = null
+        listenBrainzRemainingMillis = 0L
+        listenBrainzTimerStartedAt = 0L
         listenBrainzSong = newSong
         listenBrainzStartMs = if (exoPlayer.isPlaying) System.currentTimeMillis() else 0L
         listenBrainzDurationMs = durationMs
+        listenBrainzIsScrobbled = false
         if (newSong != null && exoPlayer.isPlaying) {
             submitListenBrainzPlayingNow(newSong, 0L, durationMs)
+            startListenBrainzTimer(newSong, durationMs)
         }
 
         // The renderer is still configured for the track that just ended at
@@ -7058,6 +7082,80 @@ class PlaybackService : MediaLibraryService() {
         discordUpdateJob = scope.launch(Dispatchers.IO) {
             runCatching { rpc.close() }
         }
+    }
+
+    private fun startListenBrainzTimer(song: Song, durationMs: Long?) {
+        listenBrainzScrobbleJob?.cancel()
+        listenBrainzIsScrobbled = false
+        val resolvedDurationSeconds = durationMs?.toInt()?.div(1000)
+            ?: parseDurationSeconds(song.durationText)
+            ?: return
+
+        val minDuration = AppSettings.scrobbleMinDuration.value
+        if (resolvedDurationSeconds <= minDuration) return
+
+        val delayPercent = AppSettings.scrobbleDelayPercent.value
+        val maxDelaySeconds = AppSettings.scrobbleDelaySeconds.value
+        val thresholdMs = (resolvedDurationSeconds * 1000L * delayPercent).toLong()
+        listenBrainzRemainingMillis = kotlin.math.min(thresholdMs, maxDelaySeconds * 1000L)
+
+        if (listenBrainzRemainingMillis <= 0L) {
+            triggerListenBrainzScrobble(song, resolvedDurationSeconds * 1000L)
+            return
+        }
+
+        listenBrainzTimerStartedAt = System.currentTimeMillis()
+        val targetId = song.videoId
+        listenBrainzScrobbleJob = scope.launch {
+            kotlinx.coroutines.delay(listenBrainzRemainingMillis)
+            if (listenBrainzSong?.videoId == targetId && !listenBrainzIsScrobbled) {
+                triggerListenBrainzScrobble(song, resolvedDurationSeconds * 1000L)
+            }
+            listenBrainzScrobbleJob = null
+        }
+    }
+
+    private fun pauseListenBrainzTimer() {
+        listenBrainzScrobbleJob?.cancel()
+        listenBrainzScrobbleJob = null
+        if (listenBrainzTimerStartedAt != 0L) {
+            val elapsed = System.currentTimeMillis() - listenBrainzTimerStartedAt
+            listenBrainzRemainingMillis = (listenBrainzRemainingMillis - elapsed).coerceAtLeast(0L)
+            listenBrainzTimerStartedAt = 0L
+        }
+    }
+
+    private fun resumeListenBrainzTimer(song: Song, durationMs: Long?) {
+        if (listenBrainzIsScrobbled || listenBrainzRemainingMillis <= 0L) return
+        listenBrainzScrobbleJob?.cancel()
+        listenBrainzTimerStartedAt = System.currentTimeMillis()
+        val resolvedDurationMs = durationMs ?: (parseDurationSeconds(song.durationText)?.toLong()?.times(1000L))
+        val targetId = song.videoId
+        listenBrainzScrobbleJob = scope.launch {
+            kotlinx.coroutines.delay(listenBrainzRemainingMillis)
+            if (listenBrainzSong?.videoId == targetId && !listenBrainzIsScrobbled) {
+                triggerListenBrainzScrobble(song, resolvedDurationMs)
+            }
+            listenBrainzScrobbleJob = null
+        }
+    }
+
+    private fun triggerListenBrainzScrobble(song: Song, durationMs: Long?) {
+        if (listenBrainzIsScrobbled) return
+        listenBrainzIsScrobbled = true
+        listenBrainzRemainingMillis = 0L
+        listenBrainzTimerStartedAt = 0L
+        val startMs = listenBrainzStartMs.takeIf { it > 0L } ?: System.currentTimeMillis()
+        submitListenBrainzFinished(song, startMs, durationMs)
+    }
+
+    private fun parseDurationSeconds(text: String?): Int? {
+        if (text == null) return null
+        val parts = text.split(":")
+        if (parts.size != 2) return null
+        val minutes = parts[0].toIntOrNull() ?: return null
+        val seconds = parts[1].toIntOrNull() ?: return null
+        return minutes * 60 + seconds
     }
 
     /**

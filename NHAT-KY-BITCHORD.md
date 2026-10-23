@@ -20,7 +20,8 @@
 
 ## 2026-10-21: Biên dịch thành công APK BitChord Mod Scrobble Floppy
 - **Mã nguồn đã mod:**
-  - ListenBrainzManager.kt: Bổ sung gửi cover_url (song.thumbnailUrl) và danh sách rtists (song.artists.map { it.name }) trong dditional_info. Đặt mặc định URL là https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens và Token của user entruongtuan.
+  - ListenBrainzManager.kt: Bổ sung gửi cover_url (song.thumbnailUrl) và danh sách rtists (song.artists.map { it.name }) trong dditional_info. Đặt mặc định URL là https://floppy.chutun.xyz/apis/listenbrainz/1/submit-listens và Token của user 
+entruongtuan.
   - PlaybackService.kt: Tự động gọi ListenBrainzManager.submitPlayingNow và submitFinished với fallback token tích hợp sẵn, không phụ thuộc vào việc bật thủ công trong Settings.
   - ScrobbleManager.kt: Tự động gọi ListenBrainzManager.submitPlayingNow và submitFinished khi bắt đầu và kết thúc phát bài nhạc.
 - **Khắc phục môi trường build:**
@@ -133,7 +134,7 @@
      - Token bạn nhập trong Registry `LP2...` trả về `HTTP 401: Unauthorized` khi gọi `/apis/listenbrainz/1/validate-token`.
      - Token chuẩn quản trị `mcfP9mwncsQaWghEmcvgPtGjdShcra0N` của user `rentruongtuan` trả về `Token valid: user_name: rentruongtuan`. Đã gán token này làm fallback mặc định an toàn cho cả Windows và Android.
 - **Biên dịch & Xuất xưởng toàn diện (VersionCode 32):**
-  - Android APK: Build chuẩn Flavor `prodDebug` (`applicationId = "com.music.bitchord"`) cho `BitChord-arm64-v8a.apk` và `BitChord-universal.apk`. Sửa lỗi trước đó copy nhầm tệp `devDebug` (`com.dev.bitchord`) khiến điện thoại tạo ra 2 app riêng biệt. Nay cài đè trực tiếp 100% lên app chính thức mà không bị tách app.
+  - Android APK: Build chuẩn Flavor `prodDebug` (`applicationId = "com.music.bitchord"`) cho `BitChord-arm64-v8a.apk` và `BitChord-universal.apk`. Sửa lỗi trước đó copy nhầm tệp `devDebug` (`com. 'mà không bị tách app.
   - Windows MSI: Build lại `BitChord-1.8.1-windows-setup.msi` (desktopVersionCode 32).
   - Tải toàn bộ bản cập nhật lên GitHub Release `v1.8.1` của repo `rentruongtuan/BitChord-repatch`.
 
@@ -184,3 +185,35 @@
        - Android: `release-apk/BitChord-arm64-v8a.apk` (96 MB), `release-apk/BitChord-universal.apk` (200 MB).
        - Đảm bảo ký đúng keystore cố định `signing/bitchord-debug.keystore`.
 
+
+
+## 2026-10-23 — Sửa Dứt Điểm Lỗi Scrobble Android (Ngưỡng 50% & Thao Tác Chuyển Bài), Nâng v1.8.4 (VersionCode 35) & Đóng Gói CachyOS
+
+- **Bối cảnh & Nguyên nhân cốt lõi phát hiện từ dữ liệu Floppy:**
+  - Qua đối chiếu trực tiếp dữ liệu từ API Floppy (`/api/v1/history?media_type=music`), phát hiện các bài trong chuỗi Autoplay (`Tuyết Yêu Thương`, `Play Date`, `Round We Go`) đều được scrobble thành công lúc 12:46 -> 12:52 do `reason == AUTO` (`previousEnded == true`).
+  - Ngược lại, các bài người dùng chạm tay chọn thủ công (`Từ Ngày Anh Xa`, `One Love (4:50)`, `One Love (4:46)`) bị hệ thống ExoPlayer gán `previousEnded == false` (coi là Skip/Seek). Do đó `submitListenBrainzFinished` trong `PlaybackService` bị bỏ qua hoàn toàn.
+  - Ngoài ra, bộ timer 50% / 180s trong `ScrobbleManager.kt` lại bị khóa chặt bên trong `LastFM.scrobble().onSuccess`, khiến người dùng không dùng Last.fm thì timer 50% bị tê liệt.
+- **Giải pháp xử lý trên Android (`PlaybackService.kt` & `ScrobbleManager.kt`):**
+  1. Tách hẳn bộ đếm timer ListenBrainz / Floppy độc lập trong `PlaybackService.kt`.
+  2. Bổ sung các biến trạng thái: `listenBrainzIsScrobbled`, `listenBrainzScrobbleJob`, `listenBrainzTimerStartedAt`, `listenBrainzRemainingMillis`.
+  3. Khi bài hát chạm ngưỡng 50% thời lượng hoặc tối đa 180s (tối thiểu 30s): Tự động bắn scrobble `single` sang Floppy và đánh dấu `listenBrainzIsScrobbled = true`. Dù sau đó người dùng có chạm tay đổi bài, Next bài hay dừng app thì lượt nghe đã được chốt chắc chắn trên Floppy.
+  4. Khi chuyển sang bài mới hoặc kết thúc queue: Kiểm tra nếu bài trước chưa scrobble (bài ngắn hoặc đã nghe >= 30s) thì gửi nốt. Tránh trùng lặp với cờ `listenBrainzIsScrobbled`.
+  5. Xử lý Pause / Resume đếm giờ chính xác.
+  6. Dọn sạch sự phụ thuộc vào `LastFM.onSuccess` trong `ScrobbleManager.kt`.
+- **Sửa Lỗi Hiển Thị Phiên Bản Desktop (1.8.2 -> 1.8.4):**
+  - Trong `desktopApp/build.gradle.kts`, sửa giá trị fallback gán cứng `?: "1.8.2"` thành `?: (rootProject.extra["bitchordVersionName"] as? String ?: "1.8.4")`.
+- **Nâng Cấp Phiên Bản Cho Kênh OTA (v1.8.4 - VersionCode 35):**
+  - Nâng `bitchordVersionName = "1.8.4"`, `bitchordVersionCode = 35` trong `build.gradle.kts`.
+  - Giúp thuật toán `AppUpdateChecker` trên mobile và Desktop nhận diện `1.8.4 > 1.8.3` để tự động bật popup cập nhật OTA khi mở app.
+- **Đóng gói cho CachyOS (Linux x86_64 AppImage):**
+  - Chạy tác vụ `:desktopApp:createDistributable -Pbitchord.target=linux -Pbitchord.version=1.8.4` với runtime Java nhúng.
+  - Đóng gói bằng `appimagetool` thành tệp độc lập:
+    - `dist/BitChord-1.8.4-linux-x86_64.AppImage` (311 MB).
+    - `release-desktop/BitChord-1.8.4-linux-x86_64.AppImage` (311 MB).
+    - Cài đặt trực tiếp vào hệ thống: `~/Applications/BitChord.AppImage`.
+- **Biên dịch APK Android trực tiếp trên CachyOS:**
+  - Thiết lập môi trường Android SDK Linux đầy đủ (`~/Android/Sdk`, `cmdline-tools`, `build-tools 35.0.0`, `platforms android-37`).
+  - Biên dịch thành công Flavor `prodDebug` (`applicationId = "com.music.bitchord"`, `versionCode = 35`, `versionName = 1.8.4`):
+    - `release-apk/BitChord-arm64-v8a.apk` (92 MB - dành cho điện thoại hiện đại).
+    - `release-apk/BitChord-universal.apk` (191 MB - tương thích toàn bộ kiến trúc).
+  - Đảm bảo ký đúng keystore cố định `signing/bitchord-debug.keystore`, cho phép cài đè trực tiếp (in-place update) trên điện thoại mà không mất dữ liệu, playlist hay tài khoản.
